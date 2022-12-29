@@ -1,13 +1,20 @@
-name: 'Wait'
-description: 'Wait a designated number of milliseconds'
+name: ci-exec
+description: Excute a command and store its output
+
 inputs:
-  milliseconds:  # id of input
-    description: 'number of milliseconds to wait'
+  run:
+    description: Command to run
     required: true
-    default: '1000'
+  shell:
+    description: Shell used to run command
+    required: false
+    default: bash
+
 outputs:
-  time: # output will be available to future steps
-    description: 'The current time after waiting'
+  stdout:
+    description: Output of the command
+  stderr:
+    description: Error of the command
 runs:
   using: 'node16'
   main: 'dist/index.js'
