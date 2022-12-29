@@ -2688,28 +2688,27 @@ exports.default = _default;
 
 /***/ }),
 
-/***/ 258:
-/***/ ((module) => {
-
-let wait = function (milliseconds) {
-  return new Promise((resolve) => {
-    if (typeof milliseconds !== 'number') {
-      throw new Error('milliseconds not a number');
-    }
-    setTimeout(() => resolve("done!"), milliseconds)
-  });
-};
-
-module.exports = wait;
-
-
-/***/ }),
-
 /***/ 357:
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("assert");
+
+/***/ }),
+
+/***/ 293:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("buffer");
+
+/***/ }),
+
+/***/ 129:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("child_process");
 
 /***/ }),
 
@@ -2777,6 +2776,22 @@ module.exports = require("path");
 
 /***/ }),
 
+/***/ 765:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("process");
+
+/***/ }),
+
+/***/ 413:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("stream");
+
+/***/ }),
+
 /***/ 16:
 /***/ ((module) => {
 
@@ -2835,20 +2850,90 @@ var __webpack_exports__ = {};
 // This entry need to be wrapped in an IIFE because it need to be isolated against other modules in the chunk.
 (() => {
 const core = __nccwpck_require__(186);
-const wait = __nccwpck_require__(258);
+const process = __nccwpck_require__(765);
+const { Buffer } = __nccwpck_require__(293);
+const { Transform } = __nccwpck_require__(413);
+const { spawn } = __nccwpck_require__(129);
 
+
+const options = {
+  bash: ['--noprofile', '--norc', '-eo', 'pipefail', '-c'],
+  sh: ['-e', '-c'],
+  python: ['-c'],
+  pwsh: ['-command', '.'],
+  powershell: ['-command', '.']
+}
+
+class RecordStream extends Transform {
+  constructor () {
+    super()
+    this._data = Buffer.from([])
+  }
+
+  get output () {
+    return this._data
+  }
+
+  parse() {
+    const text = this.output.toString();
+
+     try {
+       return JSON.parse(text);
+     }
+     catch (e) {
+       return text
+     }
+  }
+
+  _transform (chunk, _, callback) {
+    this._data = Buffer.concat([this._data, chunk])
+    callback(null, chunk)
+  }
+}
+
+function exec(shell, command, workspace) {
+  return new Promise((resolve, reject) => {
+    // prepare the streams
+    const stdout = new RecordStream();
+    const stderr = new RecordStream();
+    // prepare the shell arguments
+    const args = [...options[shell], command];
+    // prepare the process options
+    const opts = { env: process.env, cwd: workspace ?? process.cwd() };
+    // spawn the process
+    const task = spawn(shell, args, opts);
+
+    // Record stream output and pass it through main process
+    task.stdout.pipe(stdout).pipe(process.stdout);
+    task.stderr.pipe(stderr).pipe(process.stderr);
+
+    task.on('error', error => reject(error))
+    task.on('close', code => {
+      core.setOutput('stdout', stdout.parse());
+      core.setOutput('stderr', stderr.parse());
+
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Process completed with exit code ${code}.`));
+      }
+    })
+  })
+}
 
 // most @actions toolkit packages have async methods
 async function run() {
   try {
-    const ms = core.getInput('milliseconds');
-    core.info(`Waiting ${ms} milliseconds ...`);
+    const command = core.getInput('run');
+    if (!command) {
+      throw new Error(`option "run" must be one provided.`);
+    }
 
-    core.debug((new Date()).toTimeString()); // debug is only output if you set the secret `ACTIONS_RUNNER_DEBUG` to true
-    await wait(parseInt(ms));
-    core.info((new Date()).toTimeString());
+    const shell = core.getInput('shell');
+    const workspace = core.getInput("working-directory");
+    // execute the command
+    await exec(shell, command, workspace);
 
-    core.setOutput('time', new Date().toTimeString());
   } catch (error) {
     core.setFailed(error.message);
   }
